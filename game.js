@@ -1,62 +1,50 @@
-// 1. CONFIGURACIÓN DEL LIENZO
 const canvas = document.getElementById('gameCanvas');
 const ctx = canvas.getContext('2d');
-
 canvas.width = window.innerWidth;
 canvas.height = window.innerHeight;
 
-// 2. VARIABLES DE ESTADO Y PERSISTENCIA
 let score = parseInt(localStorage.getItem('peashooter_exp')) || 0;
 let level = parseInt(localStorage.getItem('peashooter_lvl')) || 1;
+let totalKills = parseInt(localStorage.getItem('peashooter_kills')) || 0;
+let isPaused = false;
 
 const gravity = 0.8;
-const keys = {}; 
 const touch = { left: false, right: false, jump: false };
+const keys = {};
 const projectiles = [];
 const enemies = [];
-const particles = [];
-
 let worldX = 0;
 let currentSpeed = 0;
-let shootTimer = 0;
+let autoShootTimer = 0;
 let manualShootTimer = 0;
-const manualShootDelay = 15; 
+const manualShootDelay = 15;
 
-// 3. CARGA DE IMÁGENES
-const playerImg = new Image();
-playerImg.src = 'personaje.png'; 
+const playerImg = new Image(); playerImg.src = 'personaje.png';
+const enemyImg = new Image(); enemyImg.src = 'paloma.png';
 
-const enemyImg = new Image();
-enemyImg.src = 'paloma.png'; 
-
-// 4. DECORACIÓN (Nubes aleatorias)
-const clouds = [];
-for(let i = 0; i < 5; i++) {
-    clouds.push({
-        x: Math.random() * canvas.width,
-        y: Math.random() * (canvas.height / 2),
-        size: Math.random() * 100 + 50,
-        speed: Math.random() * 0.5 + 0.2
+// --- NUEVO: SISTEMA DE MONTAÑAS REALISTAS ---
+const mountains = [];
+for(let i = 0; i < 10; i++) {
+    mountains.push({
+        x: i * 400,
+        width: 500 + Math.random() * 300,
+        height: 200 + Math.random() * 250,
+        color: i % 2 === 0 ? "#546E7A" : "#78909C", // Colores intercalados
+        speedFactor: 0.15 + (Math.random() * 0.1)
     });
 }
 
-// 5. CLASE JUGADOR
 class Player {
     constructor() {
-        this.width = 60; 
-        this.height = 90;
-        this.x = 100; // Posición fija en pantalla
-        this.y = canvas.height - 150;
-        this.velX = 0;
-        this.velY = 0;
-        this.speed = 6;
-        this.jumpForce = 17;
+        this.width = 60; this.height = 90;
+        this.x = 150; this.y = canvas.height - 150;
+        this.velY = 0; this.speed = 5.5;
+        this.maxHp = 100; this.hp = 100;
         this.grounded = false;
         this.animTimer = 0;
     }
 
     draw(deltaTime) {
-        // Sombra en el suelo
         ctx.fillStyle = "rgba(0,0,0,0.2)";
         ctx.beginPath();
         ctx.ellipse(this.x + this.width/2, this.y + this.height - 5, 25, 10, 0, 0, Math.PI * 2);
@@ -64,229 +52,213 @@ class Player {
 
         if (playerImg.complete) {
             this.animTimer += deltaTime;
-            // Efecto Squash & Stretch (Rebote al caminar)
-            let squash = 1.0 + Math.sin(this.animTimer * 0.015) * 0.1;
-            let stretch = 1.0 - Math.sin(this.animTimer * 0.015) * 0.05;
-            let rotation = (currentSpeed !== 0) ? Math.sin(this.animTimer * 0.015) * 0.05 : 0;
-
+            let squash = 1.0 + Math.sin(this.animTimer * 0.015) * 0.08;
             ctx.save();
             ctx.translate(this.x + this.width/2, this.y + this.height);
-            ctx.rotate(rotation);
-            ctx.scale(stretch, squash);
+            ctx.scale(1.0, squash);
             ctx.drawImage(playerImg, -this.width/2, -this.height, this.width, this.height);
             ctx.restore();
         }
+
+        ctx.fillStyle = "black"; ctx.fillRect(this.x, this.y - 25, this.width, 8);
+        ctx.fillStyle = this.hp > 30 ? "#4CAF50" : "#F44336";
+        ctx.fillRect(this.x, this.y - 25, this.width * (this.hp / this.maxHp), 8);
     }
 
     update() {
-        // Salto (Teclado o Botón Táctil)
+        if (isPaused) return;
         if ((keys['w'] || keys[' '] || touch.jump) && this.grounded) {
-            this.velY = -this.jumpForce;
-            this.grounded = false;
-            touch.jump = false; 
+            this.velY = -16; this.grounded = false; touch.jump = false;
         }
-        
-        // Movimiento Lateral
         if (keys['a'] || touch.left) currentSpeed = -this.speed;
         else if (keys['d'] || touch.right) currentSpeed = this.speed;
         else currentSpeed = 0;
 
-        // Impedir retroceder más allá del inicio
         if (worldX <= 0 && currentSpeed < 0) currentSpeed = 0;
-
         worldX += currentSpeed;
         this.velY += gravity;
         this.y += this.velY;
 
-        // Colisión con el suelo
         if (this.y + this.height > canvas.height - 60) {
             this.y = canvas.height - 60 - this.height;
-            this.velY = 0;
-            this.grounded = true;
+            this.velY = 0; this.grounded = true;
         }
     }
 }
 
-// 6. CLASE ENEMIGO (PALOMAS)
 class Enemy {
-    constructor(isBig = false, isGround = false) {
+    constructor(isBig = false) {
         this.isBig = isBig;
-        this.isGround = isGround;
-        this.width = isBig ? 80 : 55; 
-        this.height = isBig ? 70 : 50; 
-        this.hp = isBig ? 3 : 1;
-        
+        this.width = isBig ? 85 : 60;
+        this.height = isBig ? 75 : 55;
+        this.hp = isBig ? 75 : 50;
         this.x = canvas.width + 100;
-        // Si es de suelo, se ajusta al césped. Si es aire, vuela.
-        this.y = isGround ? (canvas.height - 60 - this.height + 5) : (canvas.height - 280 - Math.random() * 150);
-        
-        this.baseSpeed = isBig ? 2 : (3 + Math.random() * 2);
-        this.animTimer = Math.random() * 1000;
+        this.isGround = Math.random() < 0.4;
+        this.y = this.isGround ? (canvas.height - 60 - this.height + 3) : (canvas.height - 300 - Math.random() * 120);
+        this.baseSpeed = isBig ? 1.5 : 3;
+        this.animTimer = Math.random() * 1000; // Offset para que no todas aleteen igual
     }
 
     draw(deltaTime) {
+        // SOMBRA
+        ctx.fillStyle = "rgba(0,0,0,0.1)";
+        ctx.beginPath();
+        ctx.ellipse(this.x + this.width/2, canvas.height - 55, this.width/3, 5, 0, 0, Math.PI*2);
+        ctx.fill();
+
         if (enemyImg.complete) {
             this.animTimer += deltaTime;
-            let flySquash = 1.0 + Math.sin(this.animTimer * 0.02) * (this.isGround ? 0.1 : 0.3);
+            // SIMULACIÓN DE ALETEO (Efecto Squash y Stretch)
+            let flySquash = 1.0 + Math.sin(this.animTimer * 0.02) * (this.isGround ? 0.05 : 0.25);
+            
             ctx.save();
             ctx.translate(this.x + this.width/2, this.y + this.height/2);
             ctx.scale(1.0, flySquash);
             ctx.drawImage(enemyImg, -this.width/2, -this.height/2, this.width, this.height);
             ctx.restore();
         }
-        if (this.isBig && this.hp > 0) {
-            ctx.fillStyle = "red"; ctx.fillRect(this.x, this.y - 15, this.width * (this.hp/3), 6);
-        }
+        ctx.fillStyle = "red";
+        ctx.fillRect(this.x, this.y - 12, this.width * (this.hp / (this.isBig ? 75 : 50)), 5);
     }
 
     update() {
-        // Movimiento relativo al jugador para evitar bugs
-        this.x -= (this.baseSpeed + currentSpeed);
+        if (!isPaused) this.x -= (this.baseSpeed + (currentSpeed * 0.65));
     }
 }
 
-// 7. CLASE PROYECTIL
 class Projectile {
-    constructor(x, y) {
-        this.x = x; this.y = y;
-        this.radius = 10;
-        this.speed = 12;
-    }
+    constructor(x, y) { this.x = x; this.y = y; this.damage = 25; this.radius = 12; }
     draw() {
         ctx.fillStyle = "#AEEA00"; ctx.beginPath();
         ctx.arc(this.x, this.y, this.radius, 0, Math.PI * 2); ctx.fill();
         ctx.fillStyle = "white"; ctx.beginPath();
-        ctx.arc(this.x - 3, this.y - 3, 3, 0, Math.PI * 2); ctx.fill();
+        ctx.arc(this.x - 3, this.y - 3, 4, 0, Math.PI * 2); ctx.fill();
     }
-    update() { 
-        this.x += (this.speed - currentSpeed); 
+    update() { if (!isPaused) this.x += (13 - (currentSpeed * 0.65)); }
+}
+
+const player = new Player();
+
+function fire() { projectiles.push(new Projectile(player.x + player.width - 10, player.y + 45)); }
+
+window.addEventListener('mousedown', (e) => {
+    if (!isPaused && manualShootTimer <= 0 && e.clientX > 100) {
+        fire(); manualShootTimer = manualShootDelay;
+    }
+});
+
+const menu = document.getElementById('pause-menu');
+const menuBtn = document.getElementById('menu-btn');
+const resumeBtn = document.getElementById('resume-btn');
+
+function toggleMenu() {
+    isPaused = !isPaused;
+    menu.classList.toggle('hidden');
+    if (isPaused) {
+        document.getElementById('menu-lvl').innerText = level;
+        document.getElementById('menu-exp').innerText = score;
+        document.getElementById('menu-next-lvl').innerText = level * 100;
+        document.getElementById('kills').innerText = totalKills;
     }
 }
 
-// 8. FUNCIONES DE APOYO
-function fire() {
-    projectiles.push(new Projectile(player.x + player.width, player.y + 50));
-}
-
-function gainExp(amount) {
-    score += amount;
-    if (score >= level * 100) { score -= level * 100; level++; }
-    document.getElementById('lvl').innerText = level;
-    document.getElementById('exp').innerText = score;
-    document.getElementById('next-lvl').innerText = level * 100;
-    localStorage.setItem('peashooter_exp', score);
-    localStorage.setItem('peashooter_lvl', level);
-}
+menuBtn.onclick = toggleMenu;
+resumeBtn.onclick = toggleMenu;
 
 function drawBackground() {
-    // Cielo
-    let gradient = ctx.createLinearGradient(0, 0, 0, canvas.height);
-    gradient.addColorStop(0, "#87CEEB");
-    gradient.addColorStop(1, "#E0F7FA");
-    ctx.fillStyle = gradient;
-    ctx.fillRect(0, 0, canvas.width, canvas.height);
+    // Cielo gradiente (se dibuja cada frame)
+    let sky = ctx.createLinearGradient(0, 0, 0, canvas.height);
+    sky.addColorStop(0, "#4facfe"); sky.addColorStop(1, "#00f2fe");
+    ctx.fillStyle = sky; ctx.fillRect(0, 0, canvas.width, canvas.height);
 
-    // Montañas (Parallax)
-    ctx.fillStyle = "#90A4AE";
-    for (let i = 0; i < 4; i++) {
-        let mX = ((i * 600) - (worldX * 0.3)) % (canvas.width + 600);
-        if (mX < -600) mX += (canvas.width + 1200);
+    // DIBUJO DE MONTAÑAS INFINITAS
+    mountains.forEach(m => {
+        // El movimiento es relativo al worldX y su propia velocidad
+        let xPos = (m.x - worldX * m.speedFactor) % (canvas.width + 600);
+        if (xPos < -500) xPos += (canvas.width + 1100);
+
+        ctx.fillStyle = m.color;
         ctx.beginPath();
-        ctx.moveTo(mX, canvas.height - 60);
-        ctx.lineTo(mX + 300, canvas.height - 350);
-        ctx.lineTo(mX + 600, canvas.height - 60);
+        ctx.moveTo(xPos, canvas.height - 60);
+        ctx.lineTo(xPos + m.width / 2, canvas.height - 60 - m.height);
+        ctx.lineTo(xPos + m.width, canvas.height - 60);
         ctx.fill();
-    }
-
-    // Nubes
-    ctx.fillStyle = "white";
-    clouds.forEach(c => {
-        c.x -= (c.speed + currentSpeed * 0.1);
-        if (c.x + c.size < -100) c.x = canvas.width + 100;
-        if (c.x > canvas.width + 100) c.x = -100;
-        ctx.beginPath(); ctx.arc(c.x, c.y, c.size/2, 0, Math.PI*2); ctx.fill();
+        
+        // Efecto de nieve o luz en la cima
+        ctx.fillStyle = "rgba(255,255,255,0.1)";
+        ctx.beginPath();
+        ctx.moveTo(xPos + m.width/2 - 20, canvas.height - 60 - m.height + 40);
+        ctx.lineTo(xPos + m.width/2, canvas.height - 60 - m.height);
+        ctx.lineTo(xPos + m.width/2 + 20, canvas.height - 60 - m.height + 40);
+        ctx.fill();
     });
 
     // Suelo
-    ctx.fillStyle = "#43A047";
-    ctx.fillRect(0, canvas.height - 60, canvas.width, 60);
+    ctx.fillStyle = "#2E7D32"; ctx.fillRect(0, canvas.height - 60, canvas.width, 60);
 }
 
-// 9. CONFIGURACIÓN DE CONTROLES
-const player = new Player();
-
-// Teclado
-window.addEventListener('keydown', (e) => keys[e.key.toLowerCase()] = true);
-window.addEventListener('keyup', (e) => keys[e.key.toLowerCase()] = false);
-
-// Táctil (Botones)
-function setupTouchBtn(btnId, touchKey) {
-    const btn = document.getElementById(btnId);
-    if(!btn) return;
-    btn.addEventListener('touchstart', (e) => { e.preventDefault(); touch[touchKey] = true; }, {passive: false});
-    btn.addEventListener('touchend', (e) => { e.preventDefault(); touch[touchKey] = false; }, {passive: false});
-}
-setupTouchBtn('btn-left', 'left');
-setupTouchBtn('btn-right', 'right');
-setupTouchBtn('btn-jump', 'jump');
-
-// Disparo manual (Click o Tap en pantalla)
-window.addEventListener('mousedown', () => {
-    if (manualShootTimer <= 0) { fire(); manualShootTimer = manualShootDelay; }
-});
-
-// 10. BUCLE PRINCIPAL
-let lastTime = 0;
 function animate(currentTime) {
-    const deltaTime = currentTime - lastTime || 0;
-    lastTime = currentTime;
-
+    const deltaTime = 16; // Aproximación
     drawBackground();
     player.update();
     player.draw(deltaTime);
 
-    // Disparos
-    shootTimer++;
-    if (manualShootTimer > 0) manualShootTimer--;
-    if (shootTimer >= Math.max(12, 60 - (level * 4))) { fire(); shootTimer = 0; }
-
-    projectiles.forEach((p, index) => {
-        p.update(); p.draw();
-        if (p.x > canvas.width || p.x < -50) projectiles.splice(index, 1);
-    });
-
-    // Enemigos
-    if (Math.random() < 0.02 + (level * 0.001)) {
-        enemies.push(new Enemy(Math.random() < 0.15, Math.random() < 0.4));
+    if (!isPaused) {
+        autoShootTimer++;
+        if (manualShootTimer > 0) manualShootTimer--;
+        if (autoShootTimer > Math.max(25, 50 - (level * 2))) { fire(); autoShootTimer = 0; }
+        if (Math.random() < 0.015) enemies.push(new Enemy(Math.random() < 0.2));
     }
-    
-    enemies.forEach((en, eIdx) => {
-        en.update(); en.draw(deltaTime);
-        
-        // Colisión Proyectil - Enemigo (Hitbox Generosa)
-        projectiles.forEach((p, pIdx) => {
-            if (p.x + p.radius > en.x - 15 && p.x - p.radius < en.x + en.width + 15 && 
-                p.y + p.radius > en.y - 15 && p.y - p.radius < en.y + en.height + 15) {
-                en.hp--; projectiles.splice(pIdx, 1);
-                if (en.hp <= 0) { enemies.splice(eIdx, 1); gainExp(en.isBig ? 120 : 35); }
+
+    projectiles.forEach((p, pIdx) => {
+        p.update(); p.draw();
+        if (p.x > canvas.width + 50 || p.x < -50) projectiles.splice(pIdx, 1);
+
+        enemies.forEach((en, eIdx) => {
+            let hitboxExtra = en.isGround ? 22 : 12;
+            if (p.x + p.radius > en.x - hitboxExtra && p.x - p.radius < en.x + en.width + hitboxExtra && 
+                p.y + p.radius > en.y - hitboxExtra && p.y - p.radius < en.y + en.height + hitboxExtra) {
+                en.hp -= p.damage;
+                projectiles.splice(pIdx, 1);
+                if (en.hp <= 0) {
+                    enemies.splice(eIdx, 1);
+                    totalKills++;
+                    player.hp = Math.min(100, player.hp + 5);
+                    score += 35;
+                    if(score >= level*100) { score -= level*100; level++; }
+                    localStorage.setItem('peashooter_kills', totalKills);
+                }
             }
         });
+    });
 
-        // Colisión Jugador - Enemigo (Muerte)
+    enemies.forEach((en, eIdx) => {
+        en.update(); en.draw(deltaTime);
         if (player.x < en.x + en.width - 15 && player.x + player.width - 15 > en.x &&
             player.y < en.y + en.height - 15 && player.y + player.height > en.y) {
-            worldX = 0;
-            enemies.length = 0;
-            player.y = canvas.height - 150;
-            // El nivel y la exp no se resetean por tu petición
+            player.hp -= 25;
+            enemies.splice(eIdx, 1);
+            if (player.hp <= 0) { player.hp = 100; worldX = 0; enemies.length = 0; }
         }
-
-        if (en.x < -200 || en.x > canvas.width + 500) enemies.splice(eIdx, 1);
+        if (en.x < -200) enemies.splice(eIdx, 1);
     });
 
     requestAnimationFrame(animate);
 }
 
+function setupTouch(id, key) {
+    let b = document.getElementById(id);
+    if (!b) return;
+    b.ontouchstart = (e) => { e.preventDefault(); touch[key] = true; };
+    b.ontouchend = (e) => { e.preventDefault(); touch[key] = false; };
+}
+setupTouch('btn-left', 'left'); setupTouch('btn-right', 'right'); setupTouch('btn-jump', 'jump');
+
+window.addEventListener('keydown', (e) => { 
+    keys[e.key.toLowerCase()] = true; 
+    if(e.key === "escape") toggleMenu();
+});
+window.addEventListener('keyup', (e) => keys[e.key.toLowerCase()] = false);
 window.addEventListener('resize', () => { canvas.width = window.innerWidth; canvas.height = window.innerHeight; });
-gainExp(0); 
-requestAnimationFrame(animate);
+
+animate();

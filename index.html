@@ -3,23 +3,32 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>Peashooter Mobile</title>
+    <title>Peashooter Pro</title>
     <link rel="stylesheet" href="style.css">
 </head>
 <body>
-    <div id="ui-overlay" style="position: fixed; top: 10px; left: 10px; color: white; font-family: Arial; z-index: 10001; background: rgba(0,0,0,0.5); padding: 10px; border-radius: 5px; pointer-events: none;">
-    Nivel: <span id="lvl">1</span> | 
-    Exp: <span id="exp">0</span> / <span id="next-lvl">100</span>
-</div>
-
     <canvas id="gameCanvas"></canvas>
+
+    <div id="menu-btn">☰</div>
+
+    <div id="pause-menu" class="hidden">
+        <div class="menu-content">
+            <h2>PERFIL</h2>
+            <hr>
+            <p>Nivel: <span id="menu-lvl">1</span></p>
+            <p>EXP: <span id="menu-exp">0</span> / <span id="menu-next-lvl">100</span></p>
+            <p>Palomas eliminadas: <span id="kills">0</span></p>
+            <hr>
+            <button id="resume-btn">REANUDAR</button>
+        </div>
+    </div>
 
     <div id="touch-controls">
         <div class="left-group">
-            <button id="btn-left" aria-label="Izquierda">◀</button>
-            <button id="btn-right" aria-label="Derecha">▶</button>
+            <button id="btn-left">◀</button>
+            <button id="btn-right">▶</button>
         </div>
-        <button id="btn-jump" aria-label="Saltar">▲</button>
+        <button id="btn-jump">▲</button>
     </div>
 
     <script src="game.js"></script>

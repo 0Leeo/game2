@@ -311,6 +311,44 @@ function saveData() {
     localStorage.setItem('peashooter_lvl', level);
     localStorage.setItem('peashooter_kills', totalKills);
 }
+// --- CONTROLES PARA MÓVIL ---
+
+// Referencias a los botones de movimiento
+const btnLeft = document.getElementById('btn-left');
+const btnRight = document.getElementById('btn-right');
+const btnJump = document.getElementById('btn-up'); // El ID que tengas para saltar
+
+if (btnLeft && btnRight && btnJump) {
+    // Mover a la izquierda
+    btnLeft.addEventListener('touchstart', (e) => {
+        e.preventDefault();
+        keys['a'] = true;
+    });
+    btnLeft.addEventListener('touchend', (e) => {
+        e.preventDefault();
+        keys['a'] = false;
+    });
+
+    // Mover a la derecha
+    btnRight.addEventListener('touchstart', (e) => {
+        e.preventDefault();
+        keys['d'] = true;
+    });
+    btnRight.addEventListener('touchend', (e) => {
+        e.preventDefault();
+        keys['d'] = false;
+    });
+
+    // Saltar
+    btnJump.addEventListener('touchstart', (e) => {
+        e.preventDefault();
+        keys['w'] = true; // O ' ' (espacio) según tu configuración
+    });
+    btnJump.addEventListener('touchend', (e) => {
+        e.preventDefault();
+        keys['w'] = false;
+    });
+}
 
 window.onkeydown = (e) => keys[e.key.toLowerCase()] = true;
 window.onkeyup = (e) => keys[e.key.toLowerCase()] = false;

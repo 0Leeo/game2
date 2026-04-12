@@ -57,3 +57,9 @@ background: linear-gradient(to bottom,#4facfe 0%, #00f2fe 100%);
     border-radius: 50%;
     animation: dustDrift 5s infinite linear;
 }
+#jump, #btn-left, #btn-right {
+    touch-action: none !important;
+    user-select: none !important;
+    -webkit-user-select: none !important;
+    cursor: pointer;
+}

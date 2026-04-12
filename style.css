@@ -43,3 +43,17 @@ background: linear-gradient(to bottom,#4facfe 0%, #00f2fe 100%);
     width: 80px; height: 80px; background: rgba(255, 255, 255, 0.2);
     border: 3px solid white; border-radius: 50%; color: white; font-size: 30px;
 }
+@keyframes dustDrift {
+    0% { transform: translate(0, 0); opacity: 0.3; }
+    50% { opacity: 0.6; }
+    100% { transform: translate(100px, 50px); opacity: 0.3; }
+}
+
+.dust-particle {
+    position: fixed;
+    background: rgba(210, 180, 140, 0.4);
+    pointer-events: none;
+    z-index: 999;
+    border-radius: 50%;
+    animation: dustDrift 5s infinite linear;
+}

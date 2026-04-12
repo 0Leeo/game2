@@ -3,13 +3,16 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>Peashooter Pro</title>
+    <title>Peashooter Boss Update</title>
     <link rel="stylesheet" href="style.css">
 </head>
 <body>
-    <canvas id="gameCanvas"></canvas>
 
     <div id="menu-btn">☰</div>
+
+    <div id="distance-meter" style="position: fixed; top: 20px; right: 20px; color: white; font-family: Arial; font-weight: bold; background: rgba(0,0,0,0.5); padding: 8px 15px; border-radius: 20px; z-index: 10001; border: 1px solid #ffd600;">
+        Distancia: <span id="meters">0</span>m
+    </div>
 
     <div id="pause-menu" class="hidden">
         <div class="menu-content">
@@ -23,6 +26,8 @@
         </div>
     </div>
 
+    <canvas id="gameCanvas"></canvas>
+
     <div id="touch-controls">
         <div class="left-group">
             <button id="btn-left">◀</button>
@@ -32,5 +37,6 @@
     </div>
 
     <script src="game.js"></script>
+
 </body>
 </html>

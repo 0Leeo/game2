@@ -30,7 +30,18 @@ const shootCooldown = 280;
 
 const playerImg = new Image(); playerImg.src = 'personaje.png';
 const enemyImg = new Image(); enemyImg.src = 'paloma.png';
-
+// --- NUEVAS VARIABLES PARA LA CIUDAD Y LA PUERTA ---
+const GATE_X = 25400; // La puerta está un poco después del spawn del boss
+const desertHouses = [];
+for(let i = 0; i < 20; i++) {
+    desertHouses.push({
+        x: GATE_X + 250 + (i * 380),
+        w: 120 + Math.random() * 180,
+        h: 180 + Math.random() * 250,
+        color: `hsl(${25 + Math.random() * 15}, 45%, ${35 + Math.random() * 15}%)`,
+        windows: Math.floor(Math.random() * 5) + 3
+    });
+}
 // --- DECORACIÓN ---
 const mountains = [];
 for(let i = 0; i < 15; i++) {
@@ -218,100 +229,36 @@ class Boss {
 
     draw() {
         let flashAlpha = 0;
-        if (this.damageFlash > 0) {
-            flashAlpha = this.damageFlash / 10;
-            this.damageFlash--;
-        }
-
-        drawShadow(ctx, this.x - 20, this.y + this.height - 20, this.width + 40, 30, 0.6);
-
-        if (enemyImg.complete) {
-            ctx.save();
-            if (flashAlpha > 0) {
-                ctx.globalAlpha = 0.5;
-            }
-            ctx.drawImage(enemyImg, this.x, this.y, this.width, this.height);
-            ctx.restore();
-        }
-
-        drawGlow(ctx, this.x + this.width/2, this.y + this.height/2, 200, "#9C27B0", 0.4);
+        if (this.damageFlash > 0) { flashAlpha = this.damageFlash / 10; this.damageFlash--; }
+        ctx.save();
+        if (flashAlpha > 0) ctx.filter = "brightness(3)";
+        if (enemyImg.complete) ctx.drawImage(enemyImg, this.x, this.y, this.width, this.height);
+        ctx.restore();
         this.drawHealthBar();
-        
-        if (this.warningCircle.active) {
-            this.drawWarningCircle();
-        }
+        if (this.warningCircle.active) this.drawWarningCircle();
     }
 
     drawHealthBar() {
-        const barWidth = 400;
-        const barHeight = 25;
-        const barX = canvas.width/2 - barWidth/2;
-        const barY = 20;
-
-        ctx.fillStyle = "rgba(0, 0, 0, 0.8)";
-        ctx.fillRect(barX - 5, barY - 5, barWidth + 10, barHeight + 10);
-        
-        ctx.strokeStyle = "#FFD700";
-        ctx.lineWidth = 3;
-        ctx.strokeRect(barX - 5, barY - 5, barWidth + 10, barHeight + 10);
-
-        const healthGradient = ctx.createLinearGradient(barX, barY, barX + barWidth, barY);
-        healthGradient.addColorStop(0, "#E91E63");
-        healthGradient.addColorStop(0.5, "#9C27B0");
-        healthGradient.addColorStop(1, "#673AB7");
-
-        ctx.fillStyle = healthGradient;
-        ctx.fillRect(barX, barY, barWidth * (this.hp / this.maxHp), barHeight);
-
-        ctx.globalAlpha = 0.4;
-        ctx.fillStyle = "white";
-        ctx.fillRect(barX, barY, barWidth * (this.hp / this.maxHp), barHeight / 3);
-        ctx.globalAlpha = 1.0;
-
-        ctx.fillStyle = "#FFD700";
-        ctx.font = "bold 16px Arial";
-        ctx.textAlign = "center";
-        ctx.fillText("BOSS", canvas.width/2, barY + barHeight/2 + 6);
+        const barWidth = 400; const barHeight = 25;
+        const barX = canvas.width/2 - barWidth/2; const barY = 20;
+        ctx.fillStyle = "rgba(0,0,0,0.8)"; ctx.fillRect(barX-5, barY-5, barWidth+10, barHeight+10);
+        ctx.fillStyle = "#E91E63"; ctx.fillRect(barX, barY, barWidth * (this.hp / this.maxHp), barHeight);
+        ctx.fillStyle = "white"; ctx.font = "bold 16px Arial"; ctx.textAlign = "center";
+        ctx.fillText("EL GUARDIÁN DEL DESIERTO", canvas.width/2, barY + 18);
     }
 
     drawWarningCircle() {
         let screenX = this.warningCircle.worldTargetX - (worldX - this.warningCircle.snapWorldX);
-        const pulseScale = 1 + Math.sin(this.warningCircle.timer * 0.1) * 0.2;
-        const radius = 70 * pulseScale;
-        
-        ctx.save();
-        ctx.strokeStyle = "rgba(255, 0, 0, 0.8)";
-        ctx.lineWidth = 4;
-        ctx.beginPath();
-        ctx.arc(screenX, canvas.height - 80, radius, 0, Math.PI*2);
-        ctx.stroke();
-        
-        ctx.fillStyle = "rgba(255, 0, 0, 0.2)";
-        ctx.beginPath();
-        ctx.arc(screenX, canvas.height - 80, radius, 0, Math.PI*2);
-        ctx.fill();
-        
-        ctx.fillStyle = "rgba(255, 0, 0, 0.8)";
-        for (let i = 0; i < 8; i++) {
-            const angle = (Math.PI * 2 * i) / 8;
-            const x = screenX + Math.cos(angle) * (radius + 20);
-            const y = canvas.height - 80 + Math.sin(angle) * (radius + 20);
-            ctx.beginPath();
-            ctx.arc(x, y, 4, 0, Math.PI * 2);
-            ctx.fill();
-        }
-        
-        ctx.restore();
+        ctx.strokeStyle = "rgba(255, 0, 0, 0.8)"; ctx.lineWidth = 4;
+        ctx.beginPath(); ctx.arc(screenX, canvas.height - 80, 70, 0, Math.PI*2); ctx.stroke();
     }
 
     update() {
         if (isPaused || isDead) return;
-        if (this.x > canvas.width - 400) this.x -= this.speed;
+        let targetBossX = (GATE_X - 650) - worldX;
+        if (this.x > targetBossX) this.x -= this.speed;
         this.attackTimer++;
-        if (this.attackTimer % 120 === 0) {
-            bossProjectiles.push({ x: this.x, y: this.y + 150, size: 40, type: "SMALL" });
-            createExplosion(this.x + this.width/2, this.y + 150, "#FF9800", 6);
-        }
+        if (this.attackTimer % 120 === 0) bossProjectiles.push({ x: this.x, y: this.y + 150, size: 40, type: "SMALL" });
         if (this.attackTimer % 280 === 0 && !this.warningCircle.active) {
             this.warningCircle.active = true;
             this.warningCircle.worldTargetX = player.x + 30; 
@@ -324,11 +271,11 @@ class Boss {
                 let finalDropX = this.warningCircle.worldTargetX - (worldX - this.warningCircle.snapWorldX);
                 bossProjectiles.push({ x: finalDropX, y: -100, size: 100, type: "BIG" });
                 this.warningCircle.active = false;
-                createExplosion(finalDropX, canvas.height - 80, "#FF0000", 15);
             }
         }
     }
 }
+            
 
 let boss = null;
 
@@ -452,6 +399,17 @@ class Player {
         if (this.y + this.height > canvas.height - 60) {
             this.y = canvas.height - 60 - this.height;
             this.velY = 0; this.grounded = true;
+            // --- LÓGICA DE LA PUERTA DENTRO DE PLAYER.UPDATE ---
+if (gameState === "BOSS") {
+    // Si el boss está vivo, hay una pared invisible
+    if (worldX >= GATE_X - 250 && currentSpeed > 0) {
+        currentSpeed = 0;
+    }
+    // Si de alguna forma intenta cruzar (o está muy pegado), muere
+    if (worldX > GATE_X - 200) {
+        this.hp = 0; 
+    }
+}
         }
     }
 }
@@ -514,7 +472,7 @@ class Enemy {
         
         if (!this.isGround && !this.hasDropped && Math.abs(this.x - (player.x + 30)) < 60) {
             this.hasDropped = true;
-            if (Math.random() < 0.45) {
+            if (Math.random() < 0.15){
                 enemyProjectiles.push({ x: this.x + 20, y: this.y + 40, velY: 1, velX: currentSpeed * 0.5 });
             }
         }
@@ -585,7 +543,31 @@ function drawBackground() {
         ctx.lineTo(xPos + m.width, canvas.height - 60);
         ctx.stroke();
     });
+// --- CIUDAD DESÉRTICA DETRÁS DE LA PUERTA ---
+desertHouses.forEach(h => {
+    let hX = h.x - worldX;
+    if (hX + h.w > 0 && hX < canvas.width) {
+        ctx.fillStyle = h.color;
+        ctx.fillRect(hX, canvas.height - 60 - h.h, h.w, h.h);
+        ctx.fillStyle = "rgba(0,0,0,0.2)";
+        for(let i = 0; i < h.windows; i++) ctx.fillRect(hX + 20, canvas.height - 60 - h.h + 30 + (i * 40), 30, 25);
+    }
+});
 
+// --- LA GRAN PUERTA ---
+let gateScreenX = GATE_X - worldX;
+if (gateScreenX > -400 && gateScreenX < canvas.width + 400) {
+    ctx.fillStyle = "#5D4037"; // Postes laterales
+    ctx.fillRect(gateScreenX - 30, 0, 60, canvas.height - 60);
+    ctx.fillRect(gateScreenX + 270, 0, 60, canvas.height - 60);
+    ctx.fillStyle = "#3E2723"; // Viga superior
+    ctx.fillRect(gateScreenX - 50, 40, 400, 70);
+    
+    if (gameState === "BOSS") {
+        ctx.fillStyle = "#4E342E"; // Puerta cerrada
+        ctx.fillRect(gateScreenX + 30, 110, 240, canvas.height - 170);
+    }
+}
     // Suelo/Arena - Transición basada en proximidad al boss
     let groundColor = "#2E7D32";
     if (transitionProgress > 0) {

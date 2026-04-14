@@ -12,6 +12,27 @@ let isDead = false;
 let score = parseInt(localStorage.getItem('peashooter_exp')) || 0;
 let level = parseInt(localStorage.getItem('peashooter_lvl')) || 1;
 let totalKills = parseInt(localStorage.getItem('peashooter_kills')) || 0;
+let playerCoins = parseInt(localStorage.getItem('peashooter_coins')) || 0;
+
+// Cargar misiones guardadas
+let savedMissions = localStorage.getItem('peashooter_missions');
+if (savedMissions) {
+    try {
+        missions = JSON.parse(savedMissions);
+    } catch (e) {
+        console.log('Error cargando misiones');
+    }
+}
+
+// Cargar mejoras guardadas
+let savedUpgrades = localStorage.getItem('peashooter_upgrades');
+if (savedUpgrades) {
+    try {
+        upgrades = JSON.parse(savedUpgrades);
+    } catch (e) {
+        console.log('Error cargando mejoras');
+    }
+}
 
 const gravity = 0.8;
 const keys = {};
@@ -32,6 +53,7 @@ const playerImg = new Image(); playerImg.src = 'personaje.png';
 const enemyImg = new Image(); enemyImg.src = 'paloma.png';
 // --- NUEVAS VARIABLES PARA LA CIUDAD Y LA PUERTA ---
 const GATE_X = 25400; // La puerta está un poco después del spawn del boss
+const SHOP_X = 26400; // Tienda a 2640 metros
 const desertHouses = [];
 for(let i = 0; i < 20; i++) {
     desertHouses.push({
@@ -278,6 +300,27 @@ class Boss {
             
 
 let boss = null;
+let bossDefeated = false;
+const SECOND_GATE_X = 27967;
+// --- SISTEMA DE TIENDA ---
+let shopOpen = false;
+let upgrades = {
+    damageUpgrade: { purchased: false, cost: 325, damage: 15 },
+    healthUpgrade: { purchased: false, cost: 225, health: 40 },
+    fireRateUpgrade: { purchased: false, cost: 67, reduction: 15 }
+};
+// --- SISTEMA DE MISIONES ---
+let missions = {
+    kills250: { completed: false, claimed: false, reward: 75, name: "Derrota 250 palomas", current: 0, target: 250 },
+    kills500: { completed: false, claimed: false, reward: 150, name: "Derrota 500 palomas", current: 0, target: 500 },
+    meters2000: { completed: false, claimed: false, reward: 50, name: "Llega a los 2000 Metros", current: 0, target: 2000 },
+    defeatBoss: { completed: false, claimed: false, reward: 450, name: "Derrota al Guardián del Desierto", current: 0, target: 1 }
+};
+
+const coinImg = new Image();
+coinImg.src = 'coin.png';
+
+let missionsOpen = false;
 
 class Player {
     constructor() {
@@ -380,15 +423,54 @@ class Player {
         else if (keys['d']) currentSpeed = 7;
         else currentSpeed = 0;
 
-        if (worldX <= 0 && currentSpeed < 0) currentSpeed = 0;
+                if (worldX <= 0 && currentSpeed < 0) currentSpeed = 0;
         
-        // PARED INVISIBLE EN 25000 WORLDX = 2500 METROS - SOLO BLOQUEA AVANCE, NO RETROCESO
-        if (worldX >= 25000 && currentSpeed > 0) currentSpeed = 0;
+        if (worldX >= 25000 && currentSpeed > 0 && !bossDefeated) {
+            currentSpeed = 0;
+        }
+        if (worldX >= 28000 && currentSpeed > 0) {
+            currentSpeed = 0;
+        }
+
+        // DETECCIÓN TIENDA: Si está en rango de la tienda (26400 ± 200)
+        if (Math.abs(worldX - SHOP_X) < 200) {
+            // Mostrar botón E o móvil
+            if (!document.getElementById('shop-prompt')) {
+                const prompt = document.createElement('div');
+                prompt.id = 'shop-prompt';
+                prompt.style.cssText = `
+                    position: fixed;
+                    bottom: 200px;
+                    left: 50%;
+                    transform: translateX(-50%);
+                    background: rgba(0,0,0,0.8);
+                    color: #FFD700;
+                    padding: 15px 30px;
+                    border-radius: 10px;
+                    font-weight: bold;
+                    font-family: Arial;
+                    z-index: 100;
+                    border: 2px solid #FFD700;
+                `;
+                prompt.innerText = 'Presiona E para ENTRAR a la TIENDA';
+                document.body.appendChild(prompt);
+            }
+        } else {
+            const prompt = document.getElementById('shop-prompt');
+            if (prompt) prompt.remove();
+        }
+
+        // Abrir tienda con E
+        if (keys['e'] && Math.abs(worldX - SHOP_X) < 200) {
+            shopOpen = true;
+            isPaused = true;
+            keys['e'] = false; // Prevenir múltiples aperturas
+        }
 
         worldX += currentSpeed;
         
-        // Asegurar que no pase de 25000
-        if (worldX > 25000) worldX = 25000;
+        if (worldX > 25000 && !bossDefeated) worldX = 25000;
+        if (worldX > 28000) worldX = 28000;
         
         meters = Math.floor(worldX / 10);
         const metersEl = document.getElementById('meters');
@@ -398,7 +480,9 @@ class Player {
         this.y += this.velY;
         if (this.y + this.height > canvas.height - 60) {
             this.y = canvas.height - 60 - this.height;
-            this.velY = 0; this.grounded = true;
+            this.velY = 0; 
+            this.grounded = true;
+        }
             // --- LÓGICA DE LA PUERTA DENTRO DE PLAYER.UPDATE ---
 if (gameState === "BOSS") {
     // Si el boss está vivo, hay una pared invisible
@@ -412,7 +496,7 @@ if (gameState === "BOSS") {
 }
         }
     }
-}
+
 
 class Enemy {
     constructor(isBig = false) {
@@ -554,20 +638,89 @@ desertHouses.forEach(h => {
     }
 });
 
-// --- LA GRAN PUERTA ---
+// --- LA GRAN PUERTA (ENTRADA - 2500m) ---
 let gateScreenX = GATE_X - worldX;
 if (gateScreenX > -400 && gateScreenX < canvas.width + 400) {
-    ctx.fillStyle = "#5D4037"; // Postes laterales
+    ctx.fillStyle = "#5D4037";
     ctx.fillRect(gateScreenX - 30, 0, 60, canvas.height - 60);
     ctx.fillRect(gateScreenX + 270, 0, 60, canvas.height - 60);
-    ctx.fillStyle = "#3E2723"; // Viga superior
+    ctx.fillStyle = "#3E2723";
     ctx.fillRect(gateScreenX - 50, 40, 400, 70);
     
-    if (gameState === "BOSS") {
-        ctx.fillStyle = "#4E342E"; // Puerta cerrada
+    if (!bossDefeated) {
+        ctx.fillStyle = "#4E342E";
         ctx.fillRect(gateScreenX + 30, 110, 240, canvas.height - 170);
     }
 }
+
+// --- SEGUNDA PUERTA GIGANTE (SALIDA - 2790m) SIEMPRE CERRADA ---
+let secondGateScreenX = SECOND_GATE_X - worldX;
+if (secondGateScreenX > -400 && secondGateScreenX < canvas.width + 400) {
+    ctx.fillStyle = "#5D4037";
+    ctx.fillRect(secondGateScreenX - 30, 0, 60, canvas.height - 60);
+    ctx.fillRect(secondGateScreenX + 270, 0, 60, canvas.height - 60);
+    ctx.fillStyle = "#3E2723";
+    ctx.fillRect(secondGateScreenX - 50, 40, 400, 70);
+    
+    ctx.fillStyle = "#4E342E";
+    ctx.fillRect(secondGateScreenX + 30, 110, 240, canvas.height - 170);
+}
+
+// --- TIENDA DE MADERA (2640 metros) ---
+let shopScreenX = SHOP_X - worldX;
+if (shopScreenX > -400 && shopScreenX < canvas.width + 400) {
+    // Estructura de madera
+    ctx.fillStyle = "#5D4037"; // Madera marrón
+    ctx.fillRect(shopScreenX - 100, canvas.height - 200, 200, 140);
+    
+    // Techo
+    ctx.fillStyle = "#6D4C41";
+    ctx.beginPath();
+    ctx.moveTo(shopScreenX - 100, canvas.height - 200);
+    ctx.lineTo(shopScreenX, canvas.height - 240);
+    ctx.lineTo(shopScreenX + 100, canvas.height - 200);
+    ctx.fill();
+    
+    // Puerta
+    ctx.fillStyle = "#8D6E63";
+    ctx.fillRect(shopScreenX - 30, canvas.height - 160, 60, 120);
+    
+    // NPC - Cabeza (círculo)
+    ctx.fillStyle = "#FFDBAC";
+    ctx.beginPath();
+    ctx.arc(shopScreenX + 60, canvas.height - 120, 20, 0, Math.PI * 2);
+    ctx.fill();
+    
+    // NPC - Cuerpo (rectángulo)
+    ctx.fillStyle = "#4CAF50";
+    ctx.fillRect(shopScreenX + 45, canvas.height - 95, 30, 40);
+    
+    // NPC - Brazos
+    ctx.strokeStyle = "#FFDBAC";
+    ctx.lineWidth = 8;
+    ctx.beginPath();
+    ctx.moveTo(shopScreenX + 35, canvas.height - 80);
+    ctx.lineTo(shopScreenX + 20, canvas.height - 75);
+    ctx.stroke();
+    
+    ctx.beginPath();
+    ctx.moveTo(shopScreenX + 75, canvas.height - 80);
+    ctx.lineTo(shopScreenX + 90, canvas.height - 75);
+    ctx.stroke();
+    
+    // Ojos del NPC
+    ctx.fillStyle = "#000";
+    ctx.beginPath();
+    ctx.arc(shopScreenX + 53, canvas.height - 125, 3, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.beginPath();
+    ctx.arc(shopScreenX + 67, canvas.height - 125, 3, 0, Math.PI * 2);
+    ctx.fill();
+}
+
+     // Suelo/Arena - Transición basada en proximidad al boss
+
+
     // Suelo/Arena - Transición basada en proximidad al boss
     let groundColor = "#2E7D32";
     if (transitionProgress > 0) {
@@ -621,9 +774,297 @@ if (gateScreenX > -400 && gateScreenX < canvas.width + 400) {
         }
     }
 }
+function drawShop() {
+    if (!shopOpen) return;
+    
+    // Fondo oscuro
+    ctx.fillStyle = "rgba(0, 0, 0, 0.9)";
+    ctx.fillRect(0, 0, canvas.width, canvas.height);
+    
+    // Panel de tienda
+    const shopWidth = 500;
+    const shopHeight = 450;
+    const shopX = canvas.width / 2 - shopWidth / 2;
+    const shopY = canvas.height / 2 - shopHeight / 2;
+    
+    ctx.fillStyle = "#2E7D32";
+    ctx.fillRect(shopX, shopY, shopWidth, shopHeight);
+    ctx.strokeStyle = "#FFD700";
+    ctx.lineWidth = 3;
+    ctx.strokeRect(shopX, shopY, shopWidth, shopHeight);
+    
+    // Título
+    ctx.fillStyle = "#FFD700";
+    ctx.font = "bold 28px Arial";
+    ctx.textAlign = "center";
+    ctx.fillText("MEJORAS", canvas.width / 2, shopY + 40);
+    
+        // Monedas del jugador con imagen
+    ctx.font = "bold 16px Arial";
+    ctx.fillStyle = "#FFFFFF";
+    ctx.textAlign = "left";
+    
+    if (coinImg.complete) {
+        ctx.drawImage(coinImg, shopX + 20, shopY + 50, 25, 25);
+        ctx.fillText("Monedas: " + playerCoins, shopX + 55, shopY + 70);
+    } else {
+        ctx.fillText("Monedas: " + playerCoins + " 🪙", shopX + 20, shopY + 70);
+    }
+    
+    // Mejora 1: Daño
+    drawUpgradeItem(
+        shopX + 20, shopY + 110,
+        "Daño +15",
+        "Costo: " + upgrades.damageUpgrade.cost,
+        upgrades.damageUpgrade.purchased,
+        0
+    );
+    
+    // Mejora 2: Vida
+    drawUpgradeItem(
+        shopX + 20, shopY + 200,
+        "Vida +40",
+        "Costo: " + upgrades.healthUpgrade.cost,
+        upgrades.healthUpgrade.purchased,
+        1
+    );
+    
+    // Mejora 3: Velocidad de disparo
+    drawUpgradeItem(
+        shopX + 20, shopY + 290,
+        "Disparo Rápido",
+        "Costo: " + upgrades.fireRateUpgrade.cost,
+        upgrades.fireRateUpgrade.purchased,
+        2
+    );
+    
+    // Botón Cerrar
+    ctx.fillStyle = "#FF6B6B";
+    ctx.fillRect(shopX + 350, shopY + 380, 130, 40);
+    ctx.fillStyle = "#FFFFFF";
+    ctx.font = "bold 16px Arial";
+    ctx.textAlign = "center";
+    ctx.fillText("Cerrar [ESC]", shopX + 415, shopY + 405);
+}
+function drawMissions() {
+    if (!missionsOpen) return;
+    
+    // Fondo oscuro
+    ctx.fillStyle = "rgba(0, 0, 0, 0.9)";
+    ctx.fillRect(0, 0, canvas.width, canvas.height);
+    
+    // Panel de misiones
+    const panelWidth = 550;
+    const panelHeight = 500;
+    const panelX = canvas.width / 2 - panelWidth / 2;
+    const panelY = canvas.height / 2 - panelHeight / 2;
+    
+    ctx.fillStyle = "#1A237E";
+    ctx.fillRect(panelX, panelY, panelWidth, panelHeight);
+    ctx.strokeStyle = "#FFD700";
+    ctx.lineWidth = 3;
+    ctx.strokeRect(panelX, panelY, panelWidth, panelHeight);
+    
+    // Título
+    ctx.fillStyle = "#FFD700";
+    ctx.font = "bold 32px Arial";
+    ctx.textAlign = "center";
+    ctx.fillText("MISIONES", canvas.width / 2, panelY + 40);
+    
+    // Misiones
+    const missionsList = [
+        missions.kills250,
+        missions.kills500,
+        missions.meters2000,
+        missions.defeatBoss
+    ];
+    
+    let yOffset = panelY + 80;
+    
+    for (let i = 0; i < missionsList.length; i++) {
+        drawMissionItem(panelX + 20, yOffset, missionsList[i], i);
+        yOffset += 100;
+    }
+    
+    // Botón Cerrar
+    ctx.fillStyle = "#FF6B6B";
+    ctx.fillRect(panelX + 200, panelY + 430, 150, 40);
+    ctx.fillStyle = "#FFFFFF";
+    ctx.font = "bold 16px Arial";
+    ctx.textAlign = "center";
+    ctx.fillText("Cerrar [ESC]", panelX + 275, panelY + 455);
+}
+
+function drawMissionItem(x, y, mission, index) {
+    // Fondo
+    if (mission.claimed) {
+        ctx.fillStyle = "#1B5E20"; // Verde si fue reclamada
+    } else if (mission.completed) {
+        ctx.fillStyle = "#FFA500"; // Naranja si está completada
+    } else {
+        ctx.fillStyle = "#283593"; // Azul si no está completada
+    }
+    
+    ctx.fillRect(x, y, 510, 85);
+    ctx.strokeStyle = "#FFD700";
+    ctx.lineWidth = 2;
+    ctx.strokeRect(x, y, 510, 85);
+    
+    // Nombre de misión
+    ctx.fillStyle = "#FFFFFF";
+    ctx.font = "bold 16px Arial";
+    ctx.textAlign = "left";
+    ctx.fillText(mission.name, x + 15, y + 25);
+    
+    // Progreso
+    ctx.font = "14px Arial";
+    ctx.fillStyle = "#FFD700";
+    if (mission.target > 1) {
+        ctx.fillText(`Progreso: ${mission.current}/${mission.target}`, x + 15, y + 50);
+    } else if (mission.completed) {
+        ctx.fillText("✓ Completada", x + 15, y + 50);
+    }
+    
+    // Recompensa con imagen de moneda
+    ctx.font = "bold 16px Arial";
+    ctx.fillStyle = "#FFD700";
+    ctx.textAlign = "right";
+    
+    // Dibujar imagen de moneda si está cargada
+    if (coinImg.complete) {
+        ctx.drawImage(coinImg, x + 430, y + 30, 30, 30);
+        ctx.fillText("+" + mission.reward, x + 420, y + 50);
+    } else {
+        ctx.fillText("+" + mission.reward + " 🪙", x + 470, y + 50);
+    }
+    
+    // Botón Reclamar o estado
+    if (mission.claimed) {
+        ctx.fillStyle = "#66BB6A";
+        ctx.fillRect(x + 400, y + 55, 100, 20);
+        ctx.fillStyle = "#FFFFFF";
+        ctx.font = "bold 12px Arial";
+        ctx.textAlign = "center";
+        ctx.fillText("RECLAMADA", x + 450, y + 68);
+    } else if (mission.completed) {
+        ctx.fillStyle = "#FFD700";
+        ctx.fillRect(x + 400, y + 55, 100, 20);
+        ctx.fillStyle = "#000";
+        ctx.font = "bold 12px Arial";
+        ctx.textAlign = "center";
+        ctx.fillText("RECLAMAR", x + 450, y + 68);
+    } else {
+        ctx.fillStyle = "#999";
+        ctx.fillRect(x + 400, y + 55, 100, 20);
+        ctx.fillStyle = "#FFF";
+        ctx.font = "bold 12px Arial";
+        ctx.textAlign = "center";
+        ctx.fillText("EN PROGRESO", x + 450, y + 68);
+    }
+}
+
+function claimMission(index) {
+    const missionsList = [
+        missions.kills250,
+        missions.kills500,
+        missions.meters2000,
+        missions.defeatBoss
+    ];
+    
+    const mission = missionsList[index];
+    
+    if (mission.completed && !mission.claimed) {
+        playerCoins += mission.reward;
+        mission.claimed = true;
+        saveData();
+    }
+}
+function drawUpgradeItem(x, y, name, cost, purchased, index) {
+    // Fondo del item
+    ctx.fillStyle = purchased ? "#1B5E20" : "#388E3C";
+    ctx.fillRect(x, y, 460, 70);
+    ctx.strokeStyle = purchased ? "#66BB6A" : "#FFD700";
+    ctx.lineWidth = 2;
+    ctx.strokeRect(x, y, 460, 70);
+    
+    // Nombre
+    ctx.fillStyle = "#FFFFFF";
+    ctx.font = "bold 18px Arial";
+    ctx.textAlign = "left";
+    ctx.fillText(name, x + 15, y + 25);
+    
+       // Costo con imagen de moneda
+    ctx.font = "16px Arial";
+    ctx.fillStyle = "#FFD700";
+    
+    // Dibujar imagen de moneda si está cargada
+    if (coinImg.complete) {
+        ctx.drawImage(coinImg, x + 15, y + 38, 20, 20);
+        ctx.fillText(cost, x + 40, y + 50);
+    } else {
+        ctx.fillText(cost + " 🪙", x + 15, y + 50);
+    }
+    
+    // Estado
+    if (purchased) {
+        ctx.fillStyle = "#66BB6A";
+        ctx.font = "bold 16px Arial";
+        ctx.textAlign = "right";
+        ctx.fillText("✓ COMPRADO", x + 445, y + 35);
+    } else {
+        ctx.fillStyle = "#FFD700";
+        ctx.fillRect(x + 380, y + 10, 70, 50);
+        ctx.fillStyle = "#000";
+        ctx.font = "bold 14px Arial";
+        ctx.textAlign = "center";
+        ctx.fillText("COMPRAR", x + 415, y + 42);
+    }
+}
+
+function buyUpgrade(index) {
+    const upgradeCosts = [325, 225, 67];
+    const upgradeKeys = ['damageUpgrade', 'healthUpgrade', 'fireRateUpgrade'];
+    
+    if (upgrades[upgradeKeys[index]].purchased) {
+        alert("¡Ya tienes esta mejora!");
+        return;
+    }
+    
+    if (playerCoins >= upgradeCosts[index]) {
+        playerCoins -= upgradeCosts[index];
+        upgrades[upgradeKeys[index]].purchased = true;
+        
+        // Aplicar mejoras
+        if (index === 0) {
+            // Daño: cambiar el daño de proyectiles
+            player.projectileDamage = (player.projectileDamage || 25) + 15;
+        } else if (index === 1) {
+            // Vida: aumentar HP máximo
+            player.maxHp += 40;
+            player.hp += 40;
+        } else if (index === 2) {
+            // Velocidad disparo: reducir cooldown
+            shootCooldown = Math.max(150, shootCooldown - 15);
+        }
+        
+        saveData();
+    } else {
+        alert("¡No tienes suficientes monedas!");
+    }
+}
+
 
 function animate() {
     drawBackground();
+    
+    // Dibujar tienda si está abierta
+    if (shopOpen) {
+        drawShop();
+    }
+    // Dibujar misiones si está abierto
+    if (missionsOpen) {
+        drawMissions();
+    }
     player.update();
     player.draw(16);
 
@@ -648,7 +1089,9 @@ function animate() {
         gameState = "BOSS"; boss = new Boss();
         createExplosion(canvas.width / 2, 200, "#9C27B0", 30);
     }
-
+    // Actualizar misión de metros
+    missions.meters2000.current = meters;
+    if (meters >= 2000) missions.meters2000.completed = true;
     if (boss) {
         boss.update(); boss.draw();
         bossProjectiles.forEach((m, idx) => {
@@ -668,8 +1111,14 @@ function animate() {
                 bossProjectiles.splice(idx, 1);
             }
         });
-        if (boss.hp <= 0) { 
-            gameState = "POST_BOSS"; boss = null; score += 1000; checkLevelUp(); saveData();
+                  if (boss.hp <= 0) { 
+            gameState = "POST_BOSS"; 
+            boss = null;
+            bossDefeated = true;
+            missions.defeatBoss.completed = true;
+            score += 1000; 
+            checkLevelUp(); 
+            saveData();
             createExplosion(canvas.width/2, 200, "#FFD700", 40);
         }
     }
@@ -710,19 +1159,24 @@ function animate() {
         ctx.stroke();
         
         if (boss && p.x > boss.x && p.x < boss.x + boss.width && p.y > boss.y && p.y < boss.y + boss.height) {
-            boss.hp -= 25;
+                        boss.hp -= (p.damage || 25);
             boss.damageFlash = 10;
             createExplosion(p.x, p.y, "#FFD700", 8);
             projectiles.splice(idx, 1);
         }
         enemies.forEach((en, eIdx) => {
             if (p.x > en.x && p.x < en.x + en.width && p.y > en.y && p.y < en.y + en.height + 20) {
-                en.hp -= 25;
+                                 en.hp -= (p.damage || 25);
                 createExplosion(p.x, p.y, "#AEEA00", 6);
                 projectiles.splice(idx, 1);
                 if (en.hp <= 0) { 
                     score += en.isBig ? 50 : 20; 
                     totalKills++; 
+                                        // Actualizar misión de matar 250 y 500 palomas
+                    missions.kills250.current = totalKills;
+                    missions.kills500.current = totalKills;
+                    if (totalKills >= 250) missions.kills250.completed = true;
+                    if (totalKills >= 500) missions.kills500.completed = true;
                     createExplosion(en.x + en.width/2, en.y + en.height/2, "#FF6B6B", 12);
                     enemies.splice(eIdx, 1); 
                     checkLevelUp(); 
@@ -764,7 +1218,11 @@ function saveData() {
     localStorage.setItem('peashooter_exp', score);
     localStorage.setItem('peashooter_lvl', level);
     localStorage.setItem('peashooter_kills', totalKills);
+    localStorage.setItem('peashooter_coins', playerCoins);
+    localStorage.setItem('peashooter_missions', JSON.stringify(missions));
+    localStorage.setItem('peashooter_upgrades', JSON.stringify(upgrades));
 }
+
 
 // --- SISTEMA DE CONTROLES REFORZADO (MULTITOUCH) ---
 function configurarBoton(id, tecla) {
@@ -775,8 +1233,11 @@ function configurarBoton(id, tecla) {
             e.stopPropagation();
             if (e.target.tagName !== 'BUTTON' &&
                 canShoot && !isPaused && !isDead) {
-                    projectiles.push({ x: player.x + 60,
-                        y: player.y + 40 });
+                                        projectiles.push({ 
+                        x: player.x + 60,
+                        y: player.y + 40,
+                        damage: player.projectileDamage || 25
+                    });
                         canShoot = false;
                         setTimeout(() => canShoot = true,
                         shootCooldown);                    
@@ -810,11 +1271,92 @@ configurarBoton('btn-jump', 'w');
 
 canvas.addEventListener('pointerdown', (e) => {
     if (e.target === canvas && canShoot && !isPaused && !isDead) {
-        projectiles.push({ x: player.x + 60, y: player.y + 40 });
+        projectiles.push({ 
+            x: player.x + 60, 
+            y: player.y + 40,
+            damage: player.projectileDamage || 25
+        });
         canShoot = false;
         setTimeout(() => canShoot = true, shootCooldown);
     }
 }, { passive: false });
+
+canvas.addEventListener('click', (e) => {
+    const rect = canvas.getBoundingClientRect();
+    const clickX = e.clientX - rect.left;
+    const clickY = e.clientY - rect.top;
+    
+    // --- LÓGICA DE TIENDA ---
+    if (shopOpen) {
+        const shopWidth = 500;
+        const shopHeight = 450;
+        const shopX = canvas.width / 2 - shopWidth / 2;
+        const shopY = canvas.height / 2 - shopHeight / 2;
+        
+        // Botón Cerrar tienda
+        if (clickX > shopX + 350 && clickX < shopX + 480 && clickY > shopY + 380 && clickY < shopY + 420) {
+            shopOpen = false;
+            isPaused = false;
+            return;
+        }
+        
+        // Botones de compra
+        const itemsY = [shopY + 110, shopY + 200, shopY + 290];
+        for (let i = 0; i < 3; i++) {
+            if (clickX > shopX + 380 && clickX < shopX + 450 && clickY > itemsY[i] + 10 && clickY < itemsY[i] + 60) {
+                if (!upgrades[['damageUpgrade', 'healthUpgrade', 'fireRateUpgrade'][i]].purchased) {
+                    buyUpgrade(i);
+                }
+            }
+        }
+    }
+    
+    // --- LÓGICA DE MISIONES ---
+    if (missionsOpen) {
+        const panelWidth = 550;
+        const panelHeight = 500;
+        const panelX = canvas.width / 2 - panelWidth / 2;
+        const panelY = canvas.height / 2 - panelHeight / 2;
+        
+        // Botón Cerrar misiones
+        if (clickX > panelX + 200 && clickX < panelX + 350 && clickY > panelY + 430 && clickY < panelY + 470) {
+            missionsOpen = false;
+            isPaused = false;
+            return;
+        }
+        
+        // Botones Reclamar de misiones
+        const missionsList = [
+            missions.kills250,
+            missions.kills500,
+            missions.meters2000,
+            missions.defeatBoss
+        ];
+        
+        let yOffset = panelY + 80;
+        for (let i = 0; i < missionsList.length; i++) {
+            if (clickX > panelX + 400 && clickX < panelX + 500 && clickY > yOffset + 55 && clickY < yOffset + 75) {
+                if (missionsList[i].completed && !missionsList[i].claimed) {
+                    claimMission(i);
+                }
+            }
+            yOffset += 100;
+        }
+    }
+}, { passive: false });
+
+// Cerrar tienda y misiones con ESC
+window.addEventListener('keydown', (e) => {
+    if (e.key === 'Escape') {
+        if (shopOpen) {
+            shopOpen = false;
+            isPaused = false;
+        } else if (missionsOpen) {
+            missionsOpen = false;
+            isPaused = false;
+        }
+    }
+});
 
 window.onkeydown = (e) => keys[e.key.toLowerCase()] = true;
 window.onkeyup = (e) => keys[e.key.toLowerCase()] = false;
@@ -823,7 +1365,33 @@ window.onkeyup = (e) => keys[e.key.toLowerCase()] = false;
 const menuBtn = document.getElementById('menu-btn');
 const pauseMenu = document.getElementById('pause-menu');
 const resumeBtn = document.getElementById('resume-btn');
+// Botón de Misiones
+const missionsBtn = document.createElement('button');
+missionsBtn.id = 'missions-btn';
+missionsBtn.innerText = 'Misiones';
+missionsBtn.style.cssText = `
+    position: fixed;
+    top: 80px;
+    right: 20px;
+    padding: 12px 20px;
+    background: #FF9800;
+    color: white;
+    border: none;
+    border-radius: 8px;
+    font-weight: bold;
+    font-size: 14px;
+    cursor: pointer;
+    z-index: 50;
+    box-shadow: 0 4px 8px rgba(0,0,0,0.3);
+`;
+document.body.appendChild(missionsBtn);
 
+missionsBtn.addEventListener('pointerdown', (e) => {
+    e.stopPropagation();
+    missionsOpen = !missionsOpen;
+    if (missionsOpen) isPaused = true;
+    else isPaused = false;
+});
 function toggleMenu() {
     if (isDead) return;
     isPaused = !isPaused;
